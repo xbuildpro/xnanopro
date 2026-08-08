@@ -107,7 +107,7 @@ export default function Home() {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ widget: selected.id, prompt, count, aspectRatio, quality, images: files.map((file) => dataUrlToParts(file.url)) }),
+        body: JSON.stringify({ widget: selected.id, prompt, count, aspectRatio, quality, rightsConfirmed, adultConfirmed, images: files.map((file) => dataUrlToParts(file.url)) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Generation is temporarily unavailable.");
@@ -173,7 +173,7 @@ export default function Home() {
                 <label>Visual finish<select value={style} onChange={(event) => setStyle(event.target.value)}>{STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>
                 {selected.adult && <label>Mood<select value={sensuality} onChange={(event) => setSensuality(event.target.value)}>{SENSUALITY.map((option) => <option key={option}>{option}</option>)}</select></label>}
               </div>
-              {selected.people && <div className="checks"><label><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /> I own these photos or have permission from everyone shown.</label>{selected.adult && <label><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> Everyone shown is 21 or older.</label>}</div>}
+              {selected.people && <div className="checks"><label><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /> I own these photos or have permission from everyone shown, and agree they may be sent to Google AI to create my results.</label>{selected.adult && <label><input type="checkbox" checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} /> Everyone shown is 21 or older.</label>}</div>}
             </section>
 
             <section className="stepCard">

@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import "./hero.css";
+import "./gallery.css";
 
 const WIDGETS = [
   { id: "bg", icon: "✂", title: "Remove the background", eyebrow: "One-click cleanup", copy: "Cut out any person or product with clean, usable edges.", color: "mint", needsPhoto: true, outputs: 1, prompt: "Remove the background completely. Preserve the subject and fine edge detail. Return a clean transparent-background product-quality cutout." },
@@ -13,11 +15,16 @@ const WIDGETS = [
   { id: "hair", icon: "≈", title: "New hair, no regret", eyebrow: "Preview the change", copy: "Cuts, color, makeup and a complete style refresh.", color: "gold", needsPhoto: true, outputs: 4, people: true, prompt: "Create realistic beauty previews of the clearly adult subject. Preserve face and identity while applying the requested hair, color, makeup and styling changes." },
   { id: "product", icon: "□", title: "Make this product sell", eyebrow: "Instant campaign", copy: "Turn one product shot into studio, lifestyle and ad-ready images.", color: "cyan", needsPhoto: true, outputs: 6, prompt: "Create a premium commercial campaign set using the supplied product as the exact hero object. Preserve branding, shape and text. Vary studio, lifestyle and close-up compositions." },
   { id: "scene", icon: "◎", title: "Put me somewhere better", eyebrow: "Dream scene creator", copy: "Nightlife, vacation, luxury, fantasy or your own impossible place.", color: "lime", needsPhoto: true, outputs: 4, people: true, prompt: "Place the clearly adult subject naturally into the requested scene. Preserve identity, perspective and realistic lighting. Make the final photo feel captured, not composited." },
+  { id: "video", icon: "▶", title: "Make a campaign video", eyebrow: "Image to motion", copy: "Turn up to three photos into an eight-second Reel with cinematic motion and sound.", color: "green", needsPhoto: true, outputs: 1, people: true, video: true, prompt: "Create an eight-second premium social campaign video featuring the clearly adult subject from the reference images. Preserve identity and wardrobe. Use confident natural movement, cinematic camera motion, polished lighting, seamless pacing and a modern energetic soundtrack. No dialogue and no on-screen text." },
 ];
 
 const BODY_OPTIONS = ["Keep my current shape", "Leaner and defined", "Athletic", "More muscular", "Softly sculpted", "Curvy and balanced"];
 const STYLE_OPTIONS = ["Natural and believable", "Polished editorial", "Luxury campaign", "Cinematic nightlife", "Social-media glossy", "Bold flash photography"];
 const SENSUALITY = ["Flirty", "Confident", "Sensual editorial", "After-dark fashion", "Boudoir-inspired — covered"];
+const MARKETING_ASSETS = [
+  ...Array.from({ length: 19 }, (_, index) => ({ type: "image", src: `/marketing/marketing-${String(index + 1).padStart(2, "0")}.jpg` })),
+  ...Array.from({ length: 6 }, (_, index) => ({ type: "video", src: `/marketing/marketing-${String(index + 20).padStart(2, "0")}.mp4` })),
+];
 
 function dataUrlToParts(dataUrl) {
   const [header, data] = dataUrl.split(",");
@@ -75,7 +82,7 @@ export default function Home() {
     setFiles([]);
     setDirection("");
     setCount(widget.outputs);
-    setAspectRatio(widget.id === "influencer" || widget.id === "glam" ? "9:16" : "4:5");
+    setAspectRatio(widget.id === "influencer" || widget.id === "glam" || widget.id === "video" ? "9:16" : "4:5");
     setResults([]);
     setNotice("");
     setAdultConfirmed(false);
@@ -104,11 +111,18 @@ export default function Home() {
     setNotice(`Creating ${count} polished ${count === 1 ? "image" : "images"}…`);
     setResults([]);
     try {
-      const response = await fetch("/api/generate", {
+      const response = await fetch(selected.video ? "/api/video" : "/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ widget: selected.id, prompt, count, aspectRatio, quality, rightsConfirmed, adultConfirmed, images: files.map((file) => dataUrlToParts(file.url)) }),
       });
+      if (selected.video) {
+        if (!response.ok) { const data = await response.json(); throw new Error(data.message || "Video generation is temporarily unavailable."); }
+        const videoBlob = await response.blob();
+        setResults([{ url: URL.createObjectURL(videoBlob), mimeType: videoBlob.type || "video/mp4" }]);
+        setNotice("Your campaign video is ready.");
+        return;
+      }
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Generation is temporarily unavailable.");
       setResults(data.images || []);
@@ -129,10 +143,13 @@ export default function Home() {
       </nav>
 
       <section className="widgetHero" id="top">
-        <div className="eyebrow"><span>●</span> XNANO ENGINE ONLINE</div>
-        <h1>WHAT DO YOU<br/><em>WANT TONIGHT?</em></h1>
-        <p>Pick a result. Add a photo. We handle the complicated part.</p>
-        <a className="primary" href="#widgets">Choose a widget <span>↓</span></a>
+        <div className="heroCopy">
+          <div className="eyebrow"><span>●</span> XNANO ENGINE ONLINE</div>
+          <h1>WHAT DO YOU<br/><em>WANT TONIGHT?</em></h1>
+          <p>Pick a result. Add a photo. We handle the complicated part.</p>
+          <a className="primary" href="#widgets">Choose a widget <span>↓</span></a>
+        </div>
+        <div className="heroModel" aria-hidden="true"><img src="/mara-xnanopro-shirt2.jpeg" alt="" /></div>
       </section>
 
       <section className="widgetSection" id="widgets">
@@ -156,7 +173,7 @@ export default function Home() {
         <div className="creatorLayout">
           <div className="creatorMain">
             <section className="stepCard">
-              <div className="stepHead"><b>01</b><div><h3>Show us what you’re working with</h3><p>{selected.needsPhoto ? "Your first image is the main subject. Add extra outfit or style references after it." : "References are optional. Add a face, outfit, location or visual style if you want tighter control."}</p></div></div>
+              <div className="stepHead"><b>01</b><div><h3>Show us what you’re working with</h3><p>{selected.video ? "Add one to three clear photos of the same adult subject. The strongest image guides the opening shot." : selected.needsPhoto ? "Your first image is the main subject. Add extra outfit or style references after it." : "References are optional. Add a face, outfit, location or visual style if you want tighter control."}</p></div></div>
               <div className="dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(event.dataTransfer.files); }} onClick={() => fileInput.current?.click()}>
                 <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(event) => addFiles(event.target.files)} />
                 <span>+</span><strong>Add photos</strong><p>Click or drop JPG, PNG, WEBP or HEIC</p>
@@ -178,23 +195,33 @@ export default function Home() {
 
             <section className="stepCard">
               <div className="stepHead"><b>03</b><div><h3>Choose your set</h3><p>Generate one finished image or a coordinated pack.</p></div></div>
-              <div className="modeGrid">{[1, 4, selected.outputs].filter((value, index, array) => array.indexOf(value) === index).map((value) => <button className={count === value ? "active" : ""} key={value} onClick={() => setCount(value)}><strong>{value === 1 ? "Single image" : `${value}-image pack`}</strong><span>{value === 1 ? "One polished result" : "Coordinated variations"}</span></button>)}</div>
+              <div className="modeGrid">{(selected.video ? [1] : [1, 4, selected.outputs]).filter((value, index, array) => array.indexOf(value) === index).map((value) => <button className={count === value ? "active" : ""} key={value} onClick={() => setCount(value)}><strong>{selected.video ? "8-second campaign" : value === 1 ? "Single image" : `${value}-image pack`}</strong><span>{selected.video ? "Vertical or widescreen video with sound" : value === 1 ? "One polished result" : "Coordinated variations"}</span></button>)}</div>
             </section>
           </div>
 
           <aside className="outputPanel">
             <div className="outputSticky"><h3>Output</h3>
-              <label>Aspect ratio<select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}>{["1:1", "4:5", "3:4", "9:16", "16:9"].map((ratio) => <option key={ratio}>{ratio}</option>)}</select></label>
-              <label>Quality<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1K</option><option>2K</option><option>4K</option></select></label>
+              <label>Aspect ratio<select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}>{(selected.video ? ["9:16", "16:9"] : ["1:1", "4:5", "3:4", "9:16", "16:9"]).map((ratio) => <option key={ratio}>{ratio}</option>)}</select></label>
+              {!selected.video && <label>Quality<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1K</option><option>2K</option><option>4K</option></select></label>}
               <details><summary>Under-the-hood prompt</summary><p>{prompt}</p></details>
               {notice && <div className={`notice ${busy ? "working" : ""}`}>{busy && <i />}{notice}</div>}
-              <button className="generateButton" disabled={busy} onClick={generate}>{busy ? "Creating…" : `Generate ${count === 1 ? "image" : `${count} images`}`} <span>✦</span></button>
+              <button className="generateButton" disabled={busy} onClick={generate}>{busy ? (selected.video ? "Directing your video…" : "Creating…") : selected.video ? "Generate campaign video" : `Generate ${count === 1 ? "image" : `${count} images`}`} <span>✦</span></button>
             </div>
           </aside>
         </div>
 
-        {!!results.length && <div className="results"><div className="sectionTitle"><div><span>YOUR SET</span><h2>{selected.title}</h2></div><p>{results.length} complete</p></div><div className="resultGrid">{results.map((image, index) => <figure key={index}><img src={`data:${image.mimeType};base64,${image.data}`} alt={`Generated result ${index + 1}`} /><a download={`xnanopro-${selected.id}-${index + 1}.${image.mimeType.includes("png") ? "png" : "jpg"}`} href={`data:${image.mimeType};base64,${image.data}`}>Download</a></figure>)}</div></div>}
+        {!!results.length && <div className="results"><div className="sectionTitle"><div><span>YOUR SET</span><h2>{selected.title}</h2></div><p>{results.length} complete</p></div><div className={`resultGrid ${selected.video ? "videoResults" : ""}`}>{results.map((result, index) => <figure key={index}>{selected.video ? <video src={result.url} controls autoPlay playsInline /> : <img src={`data:${result.mimeType};base64,${result.data}`} alt={`Generated result ${index + 1}`} />}<a download={`xnanopro-${selected.id}-${index + 1}.${selected.video ? "mp4" : result.mimeType.includes("png") ? "png" : "jpg"}`} href={selected.video ? result.url : `data:${result.mimeType};base64,${result.data}`}>Download</a></figure>)}</div></div>}
       </section>}
+
+      <section className="showcase" id="showcase">
+        <div className="showcaseHead"><div><span>MADE WITH XNANOPRO</span><h2>One face.<br/>Twenty-five possibilities.</h2></div><p>Real campaign-ready stills and motion created for the XNanoPro brand. Tap any video to play.</p></div>
+        <div className="showcaseGrid">
+          {MARKETING_ASSETS.map((asset, index) => <figure key={asset.src}>
+            {asset.type === "image" ? <img src={asset.src} alt={`XNanoPro campaign example ${index + 1}`} loading="lazy" /> : <video src={asset.src} controls playsInline preload="metadata" aria-label={`XNanoPro campaign video ${index + 1}`} />}
+            <figcaption><span>{String(index + 1).padStart(2, "0")}</span><b>{asset.type === "video" ? "MOTION" : "CAMPAIGN"}</b></figcaption>
+          </figure>)}
+        </div>
+      </section>
 
       <section className="how" id="how"><span>THREE MOVES</span><h2>Pick it. Show it. Make it.</h2><div><p><b>01</b> Choose the result you want.</p><p><b>02</b> Upload a photo and choose the vibe.</p><p><b>03</b> Download a finished set.</p></div></section>
       <section className="pricing" id="pricing"><span>EARLY ACCESS</span><h2>CREATE MORE.<br/><em>LOOK BETTER.</em></h2><p>Simple credits. No software to learn.</p><a className="primary" href="#widgets">Make something →</a></section>

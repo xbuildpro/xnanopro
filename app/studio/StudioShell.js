@@ -4,11 +4,11 @@ import { useMemo, useRef, useState } from "react";
 import "./studio.css";
 
 const STUDIOS = [
-  { href: "/studio/vton", short: "VTON", label: "VTON Studio", accent: "cyan" },
-  { href: "/studio/kolors", short: "K1.5", label: "Kolors 1.5", accent: "yellow" },
-  { href: "/studio/influencer", short: "INF", label: "Influencer", accent: "pink" },
   { href: "/studio/images", short: "IMG", label: "Image Studio", accent: "green" },
   { href: "/studio/video", short: "VID", label: "Video Studio", accent: "silver" },
+  { href: "/studio/influencer", short: "INF", label: "Influencer", accent: "pink" },
+  { href: "/studio/vton", short: "VTON", label: "VTON Studio", accent: "cyan" },
+  { href: "/studio/kolors", short: "K1.5", label: "Kolors 1.5", accent: "yellow" },
 ];
 
 function readAsDataUrl(file) {
@@ -17,6 +17,15 @@ function readAsDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+function blobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -53,6 +62,36 @@ function initialValues(config) {
   values.prompt = config.defaultPrompt || "";
   values.negativePrompt = config.defaultNegativePrompt || "";
   return values;
+}
+
+async function archiveResult(config, result, prompt, metadata = {}) {
+  const body = {
+    mediaType: result.type,
+    tool: config.slug || config.path?.split("/").filter(Boolean).pop() || "studio",
+    prompt,
+    metadata: {
+      model: config.modelLabel,
+      studio: config.title,
+      ...metadata,
+    },
+  };
+
+  if (result.dataUrl) body.dataUrl = result.dataUrl;
+  else if (result.url?.startsWith("data:")) body.dataUrl = result.url;
+  else if (result.sourceUrl) body.sourceUrl = result.sourceUrl;
+  else if (result.url?.startsWith("http")) body.sourceUrl = result.url;
+  else return;
+
+  const response = await fetch("/api/gallery/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || "Gallery save failed.");
+  }
 }
 
 function ControlField({ field, value, onChange }) {
@@ -159,9 +198,10 @@ export default function StudioShell({ config }) {
     try {
       const groups = {};
       for (const [key, items] of Object.entries(files)) groups[key] = items.map((item) => dataUrlToParts(item.url));
+      const finalPrompt = buildPrompt();
       const payload = {
         ...values,
-        prompt: buildPrompt(),
+        prompt: finalPrompt,
         groups,
         images: allFiles.map((item) => dataUrlToParts(item.url)),
         rightsConfirmed: true,
@@ -183,8 +223,16 @@ export default function StudioShell({ config }) {
           throw new Error(data.message || "Video generation failed.");
         }
         const blob = await response.blob();
-        setResults([{ type: "video", url: URL.createObjectURL(blob) }]);
-        setNotice("Video ready.");
+        const objectUrl = URL.createObjectURL(blob);
+        const dataUrl = await blobAsDataUrl(blob);
+        const videoResult = { type: "video", url: objectUrl, dataUrl };
+        setResults([videoResult]);
+        try {
+          await archiveResult(config, videoResult, finalPrompt, { aspectRatio: payload.aspectRatio, quality: payload.quality });
+          setNotice("Video ready and saved to your Gallery.");
+        } catch (saveError) {
+          setNotice(`Video ready. ${saveError.message}`);
+        }
       } else {
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || "Generation failed.");
@@ -194,7 +242,16 @@ export default function StudioShell({ config }) {
           url: item.url || (item.data ? `data:${item.mimeType || item.content_type || "image/png"};base64,${item.data}` : ""),
         })).filter((item) => item.url);
         setResults(normalized);
-        setNotice(normalized.length ? `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready.` : "No image was returned. Try a different direction.");
+
+        if (normalized.length) {
+          const saved = await Promise.allSettled(normalized.map((result) => archiveResult(config, result, finalPrompt, { aspectRatio: payload.aspectRatio, quality: payload.quality })));
+          const savedCount = saved.filter((item) => item.status === "fulfilled").length;
+          setNotice(savedCount === normalized.length
+            ? `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready and saved to your Gallery.`
+            : `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready. ${savedCount} saved to your Gallery.`);
+        } else {
+          setNotice("No image was returned. Try a different direction.");
+        }
       }
     } catch (error) {
       setNotice(error.message || "The engine hit a temporary snag.");

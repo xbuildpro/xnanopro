@@ -14,6 +14,7 @@ const config = {
   endpoint: "/api/generate",
   defaultCount: 6,
   defaultAspect: "4:5",
+  defaultPrompt: "Create a coordinated campaign featuring the same clearly adult fictional or authorized influencer. Keep face and identity consistent across every result.",
   promptPlaceholder: "Luxury resort campaign, confident poses, three outfits, warm sunset light, consistent face and identity…",
   uploadGroups: [
     { key: "identity", label: "Identity reference", copy: "Optional main face/identity reference. Use only people you own or have permission to use.", max: 1, multiple: false, button: "Add identity image" },
@@ -27,9 +28,6 @@ const config = {
     { key: "identityStrength", label: "Identity consistency", default: "High", options: ["Natural","High","Very high"] },
     { key: "variation", label: "Variation", default: "Balanced", options: ["Tight","Balanced","Wide"] },
   ],
-  buildPrompt(values) {
-    return `Create a coordinated campaign featuring the same clearly adult fictional or authorized influencer. Keep face and identity consistent across every result. Creative direction: ${values.prompt}. Finish: ${values.finish}. Identity consistency: ${values.identityStrength}. Variation: ${values.variation}. Use varied poses, camera angles, outfits and locations while maintaining believable anatomy and premium photography.`;
-  },
   footerNote: "Pink accent workspace • coordinated identity sets • server-side generation",
   cta: "CREATE CAMPAIGN",
 };

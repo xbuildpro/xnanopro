@@ -14,6 +14,7 @@ const config = {
   endpoint: "/api/video",
   outputType: "video",
   defaultAspect: "9:16",
+  defaultPrompt: "Create a polished cinematic short-form video with natural movement, strong composition and appropriate sound.",
   promptPlaceholder: "Describe the movement, camera, subject action, environment, lighting and pacing…",
   uploadGroups: [
     { key: "references", label: "Video reference media", copy: "Add up to 3 subject references for the reference-pack workflow.", max: 3, button: "Add reference images" },
@@ -29,9 +30,6 @@ const config = {
     { key: "count", label: "Videos", default: "1", options: ["1"] },
     { key: "sound", label: "Generate sound", type: "toggle", default: true, help: "Keep cinematic sound enabled when supported by the model." },
   ],
-  buildPrompt(values) {
-    return `${values.prompt}. Reference mode: ${values.referenceMode}. Create a polished ${values.length} video with cinematic motion, natural movement, strong composition${values.sound ? ", and appropriate sound" : ""}.`;
-  },
   generatingText: "Rendering video…",
   footerNote: "Silver workspace • Veo 3.1 • up to 3 references • 720p / 8 sec",
   cta: "GENERATE VIDEO",

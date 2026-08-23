@@ -56,5 +56,6 @@ export const config = {
     '/api/video',
     '/api/vton',
     '/api/kolors',
+    '/api/gallery/:path*',
   ],
 };

@@ -4,6 +4,11 @@ export const maxDuration = 300;
 const SUPABASE_URL = "https://jkewqiqkenjavtbgxuip.supabase.co";
 const SUPABASE_KEY = "sb_publishable_ubS1IdiaCZPMV1vEm-zdlw_06Quiqfm";
 
+function readBearer(header) {
+  const value = String(header || "");
+  return value.toLowerCase().startsWith("bearer ") ? value.slice(7).trim() : "";
+}
+
 function readCookie(header, name) {
   const cookies = String(header || "").split(";").map((part) => part.trim());
   const match = cookies.find((part) => part.startsWith(`${name}=`));
@@ -35,7 +40,12 @@ function extensionFor(mimeType) {
 
 export async function POST(request) {
   try {
-    const token = readCookie(request.headers.get("cookie"), "ep_session");
+    // The studios run in an iframe on everything-possible.com, where ep_session
+    // is a third-party cookie the browser drops. Middleware already accepts the
+    // bearer token; this route has to as well or every save 401s and the user
+    // is told "0 saved to your Gallery".
+    const token = readBearer(request.headers.get("authorization"))
+      || readCookie(request.headers.get("cookie"), "ep_session");
     const user = await getUser(token);
     if (!user?.id) return Response.json({ message: "Log in to save media." }, { status: 401 });
 

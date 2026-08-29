@@ -17,7 +17,11 @@ export async function POST(request) {
     if (!images.length) return Response.json({ message: "Add one to three strong reference photos for the video." }, { status: 400 });
     if (body.rightsConfirmed !== true) return Response.json({ message: "Confirm you own the photos or have permission to use them and send them to Google AI." }, { status: 400 });
 
-    const ai = new GoogleGenAI({ apiKey });
+    // Pin the credential mode. @google/genai reads GOOGLE_GENAI_USE_VERTEXAI
+    // from the environment when this is left unset, and that flag is set on
+    // the deployment — which sent these API-key calls down the Vertex path,
+    // where the Veo model 404s and the OIDC audience is rejected.
+    const ai = new GoogleGenAI({ apiKey, vertexai: false });
     let operation = await ai.models.generateVideos({
       model: "veo-3.1-generate-preview",
       prompt: String(body.prompt || "Create a premium eight-second social campaign video with cinematic movement and sound."),
@@ -50,6 +54,7 @@ export async function POST(request) {
     const message = String(error?.message || "");
     if (/quota|rate|429/i.test(message)) return Response.json({ message: "The video studio is busy. Your setup is saved—try again shortly." }, { status: 429 });
     if (/safety|blocked|policy/i.test(message)) return Response.json({ message: "Try a clearly adult commercial-fashion direction with natural movement and tasteful styling." }, { status: 422 });
-    return Response.json({ message: "The video engine hit a temporary snag. Your setup is saved—try again." }, { status: 500 });
+    if (/not found|404/i.test(message)) return Response.json({ message: "The video model is unavailable for this account. Your setup is saved." }, { status: 502 });
+    return Response.json({ message: "The video engine hit a temporary snag. Your setup is saved—try again.", detail: message.slice(0, 300) }, { status: 500 });
   }
 }

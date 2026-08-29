@@ -23,11 +23,23 @@ export async function middleware(request) {
   const url = request.nextUrl;
   const supplied = url.searchParams.get('ep_token');
   const cookieToken = request.cookies.get('ep_session')?.value;
+  // The studios run inside an iframe on everything-possible.com, so ep_session
+  // is a third-party cookie. Safari blocks those outright and Chrome is
+  // retiring them, which left the cookie unset and every request bounced. The
+  // token is therefore also accepted from the Authorization header, which no
+  // browser strips.
+  const header = request.headers.get('authorization') || '';
+  const bearer = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+
+  if (bearer && await validToken(bearer)) {
+    return NextResponse.next();
+  }
 
   if (supplied && await validToken(supplied)) {
-    const cleanUrl = url.clone();
-    cleanUrl.searchParams.delete('ep_token');
-    const response = NextResponse.redirect(cleanUrl);
+    // Let the page render with the token still in the URL so the client can
+    // pick it up and use it for its API calls. Redirecting it away only worked
+    // when the cookie survived, which is exactly what could not be relied on.
+    const response = NextResponse.next();
     response.cookies.set('ep_session', supplied, {
       httpOnly: true,
       secure: true,

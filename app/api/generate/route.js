@@ -23,6 +23,23 @@ async function generateOne(ai, input, aspectRatio, quality, index, total) {
   return { data: output.data, mimeType: output.mime_type || "image/png" };
 }
 
+// A single image request fails intermittently — the identical call succeeds on a
+// retry. Generating in pairs and dropping every rejection meant one flaky failure
+// per pair returned exactly half the requested set, so each image gets its own
+// attempts before it is given up on.
+async function generateWithRetry(ai, input, aspectRatio, quality, index, total, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await generateOne(ai, input, aspectRatio, quality, index, total);
+    } catch (error) {
+      lastError = error;
+      if (/safety|blocked|policy/i.test(String(error?.message || ""))) throw error;
+    }
+  }
+  throw lastError;
+}
+
 export async function POST(request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -38,17 +55,26 @@ export async function POST(request) {
       return Response.json({ message: "Confirm that you own the photos or have permission to use them and send them to Google AI for processing." }, { status: 400 });
     }
     const input = [{ type: "text", text: prompt }, ...images.map((image) => ({ type: "image", data: cleanBase64(image.data), mime_type: image.mimeType || "image/jpeg" }))];
-    const ai = new GoogleGenAI({ apiKey });
+    // Pin the credential mode. @google/genai reads GOOGLE_GENAI_USE_VERTEXAI
+    // from the environment when this is left unset, and that flag is set on
+    // the deployment — which sent these API-key calls down the Vertex path,
+    // where the Veo model 404s and the OIDC audience is rejected.
+    const ai = new GoogleGenAI({ apiKey, vertexai: false });
     const results = [];
 
     for (let start = 0; start < count; start += 2) {
-      const batch = Array.from({ length: Math.min(2, count - start) }, (_, offset) => generateOne(ai, input, body.aspectRatio || "4:5", body.quality || "1K", start + offset, count));
+      const batch = Array.from({ length: Math.min(2, count - start) }, (_, offset) => generateWithRetry(ai, input, body.aspectRatio || "4:5", body.quality || "1K", start + offset, count));
       const settled = await Promise.allSettled(batch);
-      for (const item of settled) if (item.status === "fulfilled") results.push(item.value);
+      for (const item of settled) {
+        if (item.status === "fulfilled") results.push(item.value);
+        else console.error("XNanoPro image failed after retries", String(item.reason?.message || item.reason));
+      }
     }
 
     if (!results.length) return Response.json({ message: `This direction needs a small adjustment. ${SAFE_REMIX}` }, { status: 422 });
-    return Response.json({ images: results });
+    // Tell the client when the set came up short instead of silently returning
+    // fewer images than were asked for.
+    return Response.json({ images: results, requested: count, missing: count - results.length });
   } catch (error) {
     console.error("XNanoPro generation error", error);
     const message = String(error?.message || "");

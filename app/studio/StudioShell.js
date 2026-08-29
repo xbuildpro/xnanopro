@@ -1,14 +1,20 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import "./studio.css";
 
+// Everything Possible is the front door. The studios run inside an iframe there,
+// so switching studio has to navigate the whole window back through EP - not
+// just swap the iframe, which left the address bar on the previous studio and
+// skipped the token hand-off entirely.
+const EP_HOME = "https://www.everything-possible.com";
+
 const STUDIOS = [
-  { href: "/studio/images", short: "IMG", label: "Image Studio", accent: "green" },
-  { href: "/studio/video", short: "VID", label: "Video Studio", accent: "silver" },
-  { href: "/studio/influencer", short: "INF", label: "Influencer", accent: "pink" },
-  { href: "/studio/vton", short: "VTON", label: "VTON Studio", accent: "cyan" },
-  { href: "/studio/kolors", short: "K1.5", label: "Kolors 1.5", accent: "yellow" },
+  { href: "/studio/images", ep: "/ximage/images", short: "IMG", label: "Image Studio", accent: "green" },
+  { href: "/studio/video", ep: "/ximage/video", short: "VID", label: "Video Studio", accent: "silver" },
+  { href: "/studio/influencer", ep: "/ximage/influencer", short: "INF", label: "Influencer", accent: "pink" },
+  { href: "/studio/vton", ep: "/ximage/vton", short: "VTON", label: "VTON Studio", accent: "cyan" },
+  { href: "/studio/kolors", ep: "/ximage/kolors", short: "K1.5", label: "Kolors 1.5", accent: "yellow" },
 ];
 
 function readAsDataUrl(file) {
@@ -84,7 +90,7 @@ async function archiveResult(config, result, prompt, metadata = {}) {
 
   const response = await fetch("/api/gallery/save", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: epHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
 
@@ -139,7 +145,41 @@ function ControlField({ field, value, onChange }) {
   );
 }
 
+// The token everything-possible hands the iframe. Held in memory rather than a
+// cookie, because the cookie is third-party here and browsers drop it.
+let epToken = '';
+
+function captureEpToken() {
+  if (typeof window === 'undefined') return '';
+  if (epToken) return epToken;
+  const fromUrl = new URLSearchParams(window.location.search).get('ep_token');
+  if (fromUrl) {
+    epToken = fromUrl;
+    try {
+      sessionStorage.setItem('ep_token', fromUrl);
+      // Take it back out of the address bar now that it is held in memory.
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete('ep_token');
+      window.history.replaceState({}, '', clean.toString());
+    } catch {}
+    return epToken;
+  }
+  try { epToken = sessionStorage.getItem('ep_token') || ''; } catch {}
+  return epToken;
+}
+
+// Every call to our own API carries the token, so auth never depends on a
+// cookie surviving a cross-site iframe.
+function epHeaders(extra = {}) {
+  const token = captureEpToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
 export default function StudioShell({ config }) {
+  // Grab the token the moment the studio mounts, before anything can navigate
+  // and lose it from the URL.
+  useEffect(() => { captureEpToken(); }, []);
+
   const [values, setValues] = useState(() => initialValues(config));
   const [files, setFiles] = useState({});
   const [busy, setBusy] = useState(false);
@@ -213,7 +253,7 @@ export default function StudioShell({ config }) {
 
       const response = await fetch(config.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: epHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -246,9 +286,13 @@ export default function StudioShell({ config }) {
         if (normalized.length) {
           const saved = await Promise.allSettled(normalized.map((result) => archiveResult(config, result, finalPrompt, { aspectRatio: payload.aspectRatio, quality: payload.quality })));
           const savedCount = saved.filter((item) => item.status === "fulfilled").length;
+          const firstSaveError = saved.find((item) => item.status === "rejected")?.reason?.message;
+          const shortfall = data.missing > 0
+            ? ` ${data.missing} of the ${data.requested} could not be generated—try again to fill the set.`
+            : "";
           setNotice(savedCount === normalized.length
-            ? `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready and saved to your Gallery.`
-            : `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready. ${savedCount} saved to your Gallery.`);
+            ? `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready and saved to your Gallery.${shortfall}`
+            : `${normalized.length} result${normalized.length === 1 ? "" : "s"} ready. ${savedCount} saved to your Gallery. ${firstSaveError || ""}${shortfall}`);
         } else {
           setNotice("No image was returned. Try a different direction.");
         }
@@ -273,9 +317,18 @@ export default function StudioShell({ config }) {
   return (
     <main className={`studioRoot accent-${config.accent}`}>
       <header className="suiteHeader">
-        <a className="suiteBrand" href="/" aria-label="XImage home"><span className="suiteX">X</span><span>IMAGE</span><b>PRO</b></a>
+        <a className="suiteBrand" href={EP_HOME} target="_top" aria-label="Everything Possible home"><span className="suiteX">X</span><span>IMAGE</span><b>PRO</b></a>
         <nav className="suiteTabs" aria-label="Studios">
-          {STUDIOS.map((studio) => <a key={studio.href} href={studio.href} className={config.path === studio.href ? "active" : ""}><span>{studio.short}</span>{studio.label}</a>)}
+          {STUDIOS.map((studio) => (
+            <a
+              key={studio.href}
+              href={`${EP_HOME}${studio.ep}`}
+              target="_top"
+              className={`accent-tab accent-${studio.accent}${config.path === studio.href ? " active" : ""}`}
+            >
+              <span>{studio.short}</span>{studio.label}
+            </a>
+          ))}
         </nav>
         <div className="engineState"><i /> ENGINE ONLINE</div>
       </header>

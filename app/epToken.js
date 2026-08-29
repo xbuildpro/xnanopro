@@ -11,9 +11,21 @@ export function captureEpToken() {
   const supplied = url.searchParams.get('ep_token');
   if (supplied) {
     epToken = supplied;
-    try { sessionStorage.setItem('ep_token', supplied); } catch {}
-    url.searchParams.delete('ep_token');
-    window.history.replaceState({}, '', url.toString());
+    // Storage on this origin is third-party and partitioned, and can be blocked
+    // outright — DevTools shows it empty. Only tidy the token out of the URL
+    // once it is genuinely persisted somewhere else, otherwise a reload of the
+    // iframe would lose it entirely and bounce the visitor back to EP.
+    let persisted = false;
+    try {
+      sessionStorage.setItem('ep_token', supplied);
+      persisted = sessionStorage.getItem('ep_token') === supplied;
+    } catch {
+      persisted = false;
+    }
+    if (persisted) {
+      url.searchParams.delete('ep_token');
+      window.history.replaceState({}, '', url.toString());
+    }
     return epToken;
   }
   try { epToken = sessionStorage.getItem('ep_token') || ''; } catch {}

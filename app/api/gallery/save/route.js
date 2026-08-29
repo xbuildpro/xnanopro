@@ -53,6 +53,44 @@ export async function POST(request) {
     const mediaType = body.mediaType === "video" ? "video" : "image";
     const tool = String(body.tool || "studio").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
 
+    // Preferred path: the browser has already uploaded the bytes straight to
+    // Supabase Storage under its own token, so only this small row comes
+    // through the function and the 4.5 MB request cap stops mattering. The
+    // supplied path is checked against the caller's own id — otherwise a client
+    // could file a row pointing at somebody else's media.
+    if (body.storagePath) {
+      const storagePath = String(body.storagePath);
+      if (!storagePath.startsWith(`${user.id}/`) || storagePath.includes("..")) {
+        return Response.json({ message: "That media does not belong to your account." }, { status: 403 });
+      }
+      const stored = {
+        user_id: user.id,
+        storage_path: storagePath,
+        media_type: mediaType,
+        tool,
+        mime_type: String(body.mimeType || (mediaType === "video" ? "video/mp4" : "image/png")),
+        prompt: String(body.prompt || "").slice(0, 10000) || null,
+        metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      };
+      const storedInsert = await fetch(`${SUPABASE_URL}/rest/v1/media_gallery`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(stored),
+      });
+      if (!storedInsert.ok) {
+        const detail = await storedInsert.text().catch(() => "");
+        console.error("Gallery metadata insert failed", storedInsert.status, detail);
+        return Response.json({ message: "The file was saved, but its gallery record could not be created." }, { status: 502 });
+      }
+      const savedRow = await storedInsert.json();
+      return Response.json({ saved: savedRow?.[0] || stored });
+    }
+
     let mimeType = String(body.mimeType || (mediaType === "video" ? "video/mp4" : "image/png"));
     let bytes;
 

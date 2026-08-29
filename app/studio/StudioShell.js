@@ -70,6 +70,61 @@ function initialValues(config) {
   return values;
 }
 
+const SUPABASE_URL = "https://jkewqiqkenjavtbgxuip.supabase.co";
+const SUPABASE_KEY = "sb_publishable_ubS1IdiaCZPMV1vEm-zdlw_06Quiqfm";
+
+function userIdFromToken(token) {
+  try {
+    const claims = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(claims)).sub || "";
+  } catch {
+    return "";
+  }
+}
+
+function extensionFor(mimeType) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "video/mp4") return "mp4";
+  return "png";
+}
+
+// Generated media used to be base64'd into the JSON body of /api/gallery/save.
+// Base64 inflates by about a third, so anything at 2K blew past the 4.5 MB
+// request cap and was rejected with a 413 before the function even ran. The
+// bytes now go straight from the browser to Supabase Storage under the user's
+// own token, and only the small metadata row goes through the API.
+async function uploadToStorage(dataUrl, tool) {
+  const token = captureEpToken();
+  const userId = userIdFromToken(token);
+  if (!userId) throw new Error("Log in to save media to your gallery.");
+
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
+  if (!match) throw new Error("The result could not be prepared for saving.");
+
+  const mimeType = match[1];
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+
+  const storagePath = `${userId}/${tool}/${Date.now()}-${crypto.randomUUID()}.${extensionFor(mimeType)}`;
+  const objectUrl = `${SUPABASE_URL}/storage/v1/object/user-media/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+
+  const upload = await fetch(objectUrl, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": mimeType,
+      "x-upsert": "false",
+    },
+    body: bytes,
+  });
+
+  if (!upload.ok) throw new Error("The result was created, but saving it to your gallery failed.");
+  return { storagePath, mimeType };
+}
+
 async function archiveResult(config, result, prompt, metadata = {}) {
   const body = {
     mediaType: result.type,
@@ -82,11 +137,12 @@ async function archiveResult(config, result, prompt, metadata = {}) {
     },
   };
 
-  if (result.dataUrl) body.dataUrl = result.dataUrl;
-  else if (result.url?.startsWith("data:")) body.dataUrl = result.url;
-  else if (result.sourceUrl) body.sourceUrl = result.sourceUrl;
-  else if (result.url?.startsWith("http")) body.sourceUrl = result.url;
-  else return;
+  const dataUrl = result.dataUrl || (result.url?.startsWith("data:") ? result.url : "");
+  if (!dataUrl) return;
+
+  const stored = await uploadToStorage(dataUrl, body.tool);
+  body.storagePath = stored.storagePath;
+  body.mimeType = stored.mimeType;
 
   const response = await fetch("/api/gallery/save", {
     method: "POST",

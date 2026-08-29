@@ -20,8 +20,10 @@ const config = {
     { key: "references", label: "Video reference media", copy: "Add up to 3 subject references for the reference-pack workflow.", max: 3, button: "Add reference images" },
   ],
   fields: [
-    { key: "model", label: "Model", default: "veo-3.1-generate-preview", options: [
-      { value: "veo-3.1-generate-preview", label: "Veo 3.1 — recommended" },
+    { key: "model", label: "Model", default: "veo-3.1-fast-generate-001", options: [
+      { value: "veo-3.1-fast-generate-001", label: "Veo 3.1 Fast — recommended" },
+      { value: "veo-3.1-generate-001", label: "Veo 3.1" },
+      { value: "veo-3.1-lite-generate-001", label: "Veo 3.1 Lite — no reference pack" },
     ] },
     { key: "referenceMode", label: "Reference mode", default: "Reference pack", options: ["Text only","Start frame","First + last","Reference pack"] },
     { key: "aspectRatio", label: "Aspect ratio", default: "9:16", options: ["9:16","16:9"] },

@@ -3,6 +3,36 @@ import { createGoogleClient } from "../../googleClient";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+// Taken from the working 3.0.1 build. The -preview ids were retired and 404 on
+// Vertex for this project — "Publisher model .../veo-3.1-generate-preview was
+// not found" — so requests are migrated to the current -001 GA ids.
+const VIDEO_MODEL_MIGRATIONS = Object.freeze({
+  "veo-3.1-fast-generate-preview": "veo-3.1-fast-generate-001",
+  "veo-3.1-generate-preview": "veo-3.1-generate-001",
+  "veo-3.1-lite-generate-preview": "veo-3.1-lite-generate-001",
+});
+
+const SUPPORTED_VIDEO_MODELS = new Set([
+  "veo-3.1-lite-generate-001",
+  "veo-3.1-fast-generate-001",
+  "veo-3.1-generate-001",
+]);
+
+// Only these two accept a reference pack; lite is text/frame only.
+const REFERENCE_VIDEO_MODELS = new Set([
+  "veo-3.1-fast-generate-001",
+  "veo-3.1-generate-001",
+]);
+
+function normalizeVideoModel(value) {
+  const requested = String(value || "veo-3.1-fast-generate-001");
+  const migrated = VIDEO_MODEL_MIGRATIONS[requested] || requested;
+  if (!SUPPORTED_VIDEO_MODELS.has(migrated)) {
+    throw new Error(`Unsupported Veo model: ${requested}. Choose a current Veo 3.1 model ending in -001.`);
+  }
+  return migrated;
+}
+
 function cleanBase64(value = "") {
   return value.replace(/^data:[^;]+;base64,/, "");
 }
@@ -18,8 +48,13 @@ export async function POST(request) {
     if (!images.length) return Response.json({ message: "Add one to three strong reference photos for the video." }, { status: 400 });
     if (body.rightsConfirmed !== true) return Response.json({ message: "Confirm you own the photos or have permission to use them and send them to Google AI." }, { status: 400 });
 
+    const model = normalizeVideoModel(body.model);
+    if (images.length && !REFERENCE_VIDEO_MODELS.has(model)) {
+      return Response.json({ message: "That model cannot use reference images. Choose Veo 3.1 or Veo 3.1 Fast." }, { status: 400 });
+    }
+
     let operation = await ai.models.generateVideos({
-      model: "veo-3.1-generate-preview",
+      model,
       prompt: String(body.prompt || "Create a premium eight-second social campaign video with cinematic movement and sound."),
       config: {
         aspectRatio: body.aspectRatio === "16:9" ? "16:9" : "9:16",

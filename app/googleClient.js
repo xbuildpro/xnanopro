@@ -5,6 +5,15 @@ import { GoogleGenAI } from "@google/genai";
 // threw "Cannot access 'u' before initialization" on every /api/video request
 // and, before that, "Invalid value for audience". Lazy initialisation makes that
 // class of ordering bug impossible.
+function audienceFromToken(token) {
+  try {
+    const claims = JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString("utf8"));
+    return Array.isArray(claims.aud) ? claims.aud[0] : claims.aud || "";
+  } catch {
+    return "";
+  }
+}
+
 export async function createGoogleClient() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const useVertex = String(process.env.GOOGLE_GENAI_USE_VERTEXAI || "").toLowerCase() === "true";
@@ -29,9 +38,16 @@ export async function createGoogleClient() {
   const { getVercelOidcToken } = await import("@vercel/oidc");
   const { ExternalAccountClient } = await import("google-auth-library");
 
-  const audience = `//iam.googleapis.com/projects/${projectNumber}`
-    + `/locations/global/workloadIdentityPools/${poolId}`
-    + `/providers/${providerId}`;
+  // The audience must match the one Vercel actually minted the OIDC token with.
+  // Building it from the GCP_* secrets produced a different string and Google
+  // rejected the exchange with "The audience in ID Token [...] does not match
+  // the expected audience", so the token's own aud claim wins and the env vars
+  // are only a fallback.
+  const firstToken = await getVercelOidcToken();
+  const audience = audienceFromToken(firstToken)
+    || `//iam.googleapis.com/projects/${projectNumber}`
+      + `/locations/global/workloadIdentityPools/${poolId}`
+      + `/providers/${providerId}`;
 
   const authClient = ExternalAccountClient.fromJSON({
     type: "external_account",
@@ -40,7 +56,7 @@ export async function createGoogleClient() {
     token_url: "https://sts.googleapis.com/v1/token",
     service_account_impersonation_url:
       `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:generateAccessToken`,
-    subject_token_supplier: { getSubjectToken: getVercelOidcToken },
+    subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() },
   });
 
   return {

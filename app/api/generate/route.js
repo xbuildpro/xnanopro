@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { createGoogleClient } from "../../googleClient";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -42,8 +42,9 @@ async function generateWithRetry(ai, input, aspectRatio, quality, index, total, 
 
 export async function POST(request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) return Response.json({ message: "The image engine needs its private Google API key connected once before the first generation." }, { status: 503 });
+    const client = await createGoogleClient();
+    if (!client) return Response.json({ message: "The image engine needs its private Google credentials connected once before the first generation." }, { status: 503 });
+    const { ai } = client;
 
     const body = await request.json();
     const count = Math.min(10, Math.max(1, Number(body.count) || 1));
@@ -55,11 +56,6 @@ export async function POST(request) {
       return Response.json({ message: "Confirm that you own the photos or have permission to use them and send them to Google AI for processing." }, { status: 400 });
     }
     const input = [{ type: "text", text: prompt }, ...images.map((image) => ({ type: "image", data: cleanBase64(image.data), mime_type: image.mimeType || "image/jpeg" }))];
-    // Pin the credential mode. @google/genai reads GOOGLE_GENAI_USE_VERTEXAI
-    // from the environment when this is left unset, and that flag is set on
-    // the deployment — which sent these API-key calls down the Vertex path,
-    // where the Veo model 404s and the OIDC audience is rejected.
-    const ai = new GoogleGenAI({ apiKey, vertexai: false });
     const results = [];
 
     for (let start = 0; start < count; start += 2) {

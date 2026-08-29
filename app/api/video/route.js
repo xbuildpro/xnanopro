@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { createGoogleClient } from "../../googleClient";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -9,19 +9,15 @@ function cleanBase64(value = "") {
 
 export async function POST(request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) return Response.json({ message: "Connect the private Google API key once to turn on campaign videos." }, { status: 503 });
+    const client = await createGoogleClient();
+    if (!client) return Response.json({ message: "Connect the private Google credentials once to turn on campaign videos." }, { status: 503 });
+    const { ai, downloadHeaders } = client;
 
     const body = await request.json();
     const images = Array.isArray(body.images) ? body.images.slice(0, 3) : [];
     if (!images.length) return Response.json({ message: "Add one to three strong reference photos for the video." }, { status: 400 });
     if (body.rightsConfirmed !== true) return Response.json({ message: "Confirm you own the photos or have permission to use them and send them to Google AI." }, { status: 400 });
 
-    // Pin the credential mode. @google/genai reads GOOGLE_GENAI_USE_VERTEXAI
-    // from the environment when this is left unset, and that flag is set on
-    // the deployment — which sent these API-key calls down the Vertex path,
-    // where the Veo model 404s and the OIDC audience is rejected.
-    const ai = new GoogleGenAI({ apiKey, vertexai: false });
     let operation = await ai.models.generateVideos({
       model: "veo-3.1-generate-preview",
       prompt: String(body.prompt || "Create a premium eight-second social campaign video with cinematic movement and sound."),
@@ -46,7 +42,7 @@ export async function POST(request) {
     const generated = operation.response?.generatedVideos?.[0]?.video;
     const uri = generated?.uri;
     if (!uri) return Response.json({ message: "That direction needs a small adjustment. Try a simpler action or camera move." }, { status: 422 });
-    const videoResponse = await fetch(uri, { headers: { "x-goog-api-key": apiKey } });
+    const videoResponse = await fetch(uri, { headers: await downloadHeaders() });
     if (!videoResponse.ok || !videoResponse.body) return Response.json({ message: "The video rendered but could not be downloaded. Try again." }, { status: 502 });
     return new Response(videoResponse.body, { headers: { "Content-Type": "video/mp4", "Content-Disposition": "inline; filename=xnanopro-campaign.mp4" } });
   } catch (error) {
